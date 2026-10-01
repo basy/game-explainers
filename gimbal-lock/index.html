@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>
+<title>ジンバルロックの仕組み</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a DCC-style 3D viewport on the left, a chapter rail + live readout on the right; stacks on phones. Single dark "viewport" look by choice. */
+:root{
+  --bg:#1a1e25; --panel:#222731; --raise:#2a303b; --line:#343b48;
+  --fg:#e7eaf0; --muted:#9aa3b3; --accent:#f2a54a;
+  --ax-x:#e5574f; --ax-y:#6fc24c; --ax-z:#4b8fe8;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.7;padding:0 16px}
+.app{max-width:1240px;margin:0 auto;padding-block:20px 32px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 24px}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.back{display:inline-block;font-size:12px;color:var(--muted);text-decoration:none;margin-bottom:6px}.back:hover{color:var(--fg)}
+h1{font-family:var(--f-display);font-weight:900;font-size:clamp(24px,3.4vw,34px);line-height:1.25;margin:2px 0 0;text-wrap:balance}
+.tabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+.tabs button{font:500 13px var(--f-body);color:var(--muted);background:none;border:0;border-radius:6px;padding:6px 14px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--raise);color:var(--fg)}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:16px;align-items:start}
+@media (max-width:900px){.stage{grid-template-columns:minmax(0,1fr)}}
+.viewport{position:relative;aspect-ratio:4/3;max-width:100%;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);touch-action:none;cursor:grab}
+@media (max-width:600px){.viewport{aspect-ratio:1/1}}
+.viewport:active{cursor:grabbing}
+canvas{display:block;width:100%;height:100%}
+.legend{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:4px;font-size:12px;pointer-events:none}
+.chip{display:flex;align-items:center;gap:8px;background:rgba(26,30,37,.72);padding:3px 10px 3px 8px;border-radius:5px}
+.chip i{width:10px;height:10px;border-radius:50%;display:block}
+.chip b{font-family:var(--f-mono);font-weight:600}
+.hint{position:absolute;right:12px;bottom:10px;font-size:11px;color:var(--muted);pointer-events:none}
+.lock{position:absolute;right:12px;top:12px;font:700 13px var(--f-body);letter-spacing:.06em;color:#1a1e25;background:var(--accent);padding:5px 12px;border-radius:5px;animation:blink 1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:.55}}
+.panel{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.step{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;color:var(--accent)}
+.caption h2{font-family:var(--f-display);font-weight:700;font-size:21px;line-height:1.35;margin:4px 0 8px;text-wrap:balance}
+.caption p{margin:0;color:#cfd4dd}
+.caption .em-y{color:var(--ax-y);font-weight:700}.caption .em-x{color:var(--ax-x);font-weight:700}.caption .em-z{color:var(--ax-z);font-weight:700}.caption .em-a{color:var(--accent);font-weight:700}
+pre{font:12px/1.6 var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:10px 0 0;overflow-x:auto;color:#cfd4dd}
+pre .c{color:var(--muted)}
+.transport{display:flex;align-items:center;gap:8px;margin-top:14px}
+.transport button{display:grid;place-items:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--raise);color:var(--fg);cursor:pointer}
+.transport button:hover{border-color:var(--muted)}
+.bar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.bar span{display:block;height:100%;width:0;background:var(--accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.readout{display:grid;gap:8px;font-size:13px}
+.row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px}
+.row .k{display:flex;align-items:center;gap:7px;color:var(--muted)}
+.row .k i{width:8px;height:8px;border-radius:50%}
+.row .v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:14px;text-align:right;min-width:72px}
+.dial{height:4px;background:var(--line);border-radius:2px;position:relative}
+.dial span{position:absolute;top:-3px;width:2px;height:10px;border-radius:1px;left:50%}
+.meter{border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.meter .top{display:flex;justify-content:space-between;color:var(--muted)}
+.meter .top b{font-family:var(--f-mono);color:var(--fg);font-variant-numeric:tabular-nums}
+.meter .track{height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
+.meter .track span{display:block;height:100%;background:var(--ax-y);transition:background .2s}
+.quat{font-family:var(--f-mono);font-size:12px;color:var(--accent);font-variant-numeric:tabular-nums}
+.chapters{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.chapters button{width:100%;display:grid;grid-template-columns:22px 1fr;gap:8px;text-align:left;font:400 13px var(--f-body);color:var(--muted);background:none;border:0;border-radius:6px;padding:7px 8px;cursor:pointer}
+.chapters button:hover{background:var(--raise)}
+.chapters button[aria-current="true"]{background:var(--raise);color:var(--fg)}
+.chapters .n{font-family:var(--f-mono);font-size:11px;padding-top:2px}
+.free{display:grid;gap:12px}
+.free label{display:grid;grid-template-columns:96px 1fr 52px;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.free output{font-family:var(--f-mono);text-align:right;color:var(--fg);font-variant-numeric:tabular-nums}
+.free input{width:100%}
+.free .btns{display:flex;flex-wrap:wrap;gap:8px}
+.free .btns button{font:500 13px var(--f-body);color:var(--fg);background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer}
+.free p{margin:0;font-size:13px;color:#cfd4dd}
+#sy{accent-color:var(--ax-y)}#sp{accent-color:var(--ax-x)}#sr{accent-color:var(--ax-z)}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div>
+      <a class="back" href="../">← 解説一覧へ</a>
+      <div class="eyebrow">3DCG · 回転の表現 · Euler angles</div>
+      <h1>ジンバルロックはなぜ起きる？</h1>
+    </div>
+    <div class="tabs" role="tablist">
+      <button id="tabStory" role="tab" aria-selected="true">解説アニメ</button>
+      <button id="tabFree" role="tab" aria-selected="false">自分で回す</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div class="viewport" id="vp">
+      <canvas id="c"></canvas>
+      <div class="legend">
+        <div class="chip"><i style="background:var(--ax-y)"></i><b>Y</b>ヨー（外リング）</div>
+        <div class="chip"><i style="background:var(--ax-x)"></i><b>X</b>ピッチ（中リング）</div>
+        <div class="chip"><i style="background:var(--ax-z)"></i><b>Z</b>ロール（内リング）</div>
+      </div>
+      <div class="lock" id="lock" hidden>ジンバルロック中</div>
+      <div class="hint">ドラッグで視点を回せます</div>
+    </div>
+
+    <aside class="panel">
+      <section class="card caption" id="story">
+        <div class="step" id="capStep">STEP 1 / 6</div>
+        <h2 id="capTitle"></h2>
+        <div id="capBody"></div>
+        <div class="transport">
+          <button id="bPrev" aria-label="前のステップ"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 2v10M12 2 5 7l7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6"/></svg></button>
+          <button id="bPlay" aria-label="一時停止"><svg id="icPlay" width="14" height="14" viewBox="0 0 14 14"><path d="M3 2h3v10H3zM8 2h3v10H8z" fill="currentColor"/></svg></button>
+          <button id="bNext" aria-label="次のステップ"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M11 2v10M2 2l7 5-7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6"/></svg></button>
+          <div class="bar"><span id="prog"></span></div>
+        </div>
+      </section>
+
+      <section class="card free" id="free" hidden>
+        <label for="sy">Y ヨー<input id="sy" type="range" min="-180" max="180" value="0"><output id="oy">0°</output></label>
+        <label for="sp">X ピッチ<input id="sp" type="range" min="-90" max="90" value="0"><output id="op">0°</output></label>
+        <label for="sr">Z ロール<input id="sr" type="range" min="-180" max="180" value="0"><output id="or">0°</output></label>
+        <div class="btns">
+          <button id="fLock">ピッチを90°にする</button>
+          <button id="fReset">リセット</button>
+        </div>
+        <p>ピッチを90°にしてから、ヨーとロールのスライダーを交互に動かしてみてください。どちらも機体を同じ向きに回すだけになります。</p>
+      </section>
+
+      <section class="card readout">
+        <div class="row"><span class="k"><i style="background:var(--ax-y)"></i>ヨー Y</span><div class="dial"><span id="dy" style="background:var(--ax-y)"></span></div><span class="v" id="vy">0.0°</span></div>
+        <div class="row"><span class="k"><i style="background:var(--ax-x)"></i>ピッチ X</span><div class="dial"><span id="dp" style="background:var(--ax-x)"></span></div><span class="v" id="vpi">0.0°</span></div>
+        <div class="row"><span class="k"><i style="background:var(--ax-z)"></i>ロール Z</span><div class="dial"><span id="dr" style="background:var(--ax-z)"></span></div><span class="v" id="vr">0.0°</span></div>
+        <div class="meter">
+          <div class="top"><span>外リング軸 Y と内リング軸 Z のなす角</span><b id="vang">90°</b></div>
+          <div class="track"><span id="mang" style="width:100%"></span></div>
+        </div>
+        <div class="quat" id="quat" hidden></div>
+      </section>
+
+      <section class="card" id="chapCard">
+        <ol class="chapters" id="chapters"></ol>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+const T = THREE, D = Math.PI/180;
+const COL = {x:0xe5574f, y:0x6fc24c, z:0x4b8fe8, acc:0xf2a54a, metal:0x6b7383};
+
+/* ---------- scene ---------- */
+const vp = document.getElementById('vp'), canvas = document.getElementById('c');
+const renderer = new T.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.setClearColor(0x1a1e25);
+const scene = new T.Scene();
+const camera = new T.PerspectiveCamera(38, 4/3, 0.1, 100);
+let az = 0.78, el = 0.36, dist = 12.2;
+function placeCam(){
+  camera.position.set(dist*Math.cos(el)*Math.sin(az), dist*Math.sin(el), dist*Math.cos(el)*Math.cos(az));
+  camera.lookAt(0,-0.2,0);
+}
+scene.add(new T.HemisphereLight(0xdfe8ff, 0x22262e, 0.85));
+const sun = new T.DirectionalLight(0xffffff, 0.9); sun.position.set(4,8,6); scene.add(sun);
+const grid = new T.GridHelper(14, 14, 0x3a4252, 0x2a303a); grid.position.y = -3.6; scene.add(grid);
+
+function rod(a, b, r, mat){
+  const d = new T.Vector3().subVectors(b, a);
+  const m = new T.Mesh(new T.CylinderGeometry(r, r, d.length(), 12), mat);
+  m.position.copy(a).addScaledVector(d, .5);
+  m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0), d.clone().normalize());
+  return m;
+}
+function ringMat(c){ return new T.MeshStandardMaterial({color:c, metalness:.35, roughness:.42, emissive:c, emissiveIntensity:0, transparent:true}); }
+function axisLine(dir, color, len){
+  const g = new T.Group();
+  const mat = new T.MeshBasicMaterial({color, transparent:true, opacity:.6, depthWrite:false});
+  const a = dir.clone().multiplyScalar(-len), b = dir.clone().multiplyScalar(len);
+  g.add(rod(a, b, .02, mat));
+  const cone = new T.Mesh(new T.ConeGeometry(.09, .3, 14), mat);
+  cone.position.copy(dir.clone().multiplyScalar(len + .12));
+  cone.quaternion.setFromUnitVectors(new T.Vector3(0,1,0), dir);
+  g.add(cone);
+  g.userData.mat = mat;
+  return g;
+}
+
+// fixed stand
+const metal = new T.MeshStandardMaterial({color:COL.metal, metalness:.5, roughness:.5});
+const bracket = new T.Mesh(new T.TorusGeometry(3.05, .06, 12, 80, Math.PI), metal);
+bracket.rotation.z = Math.PI/2; scene.add(bracket);
+scene.add(rod(new T.Vector3(0,2.62,0), new T.Vector3(0,3.05,0), .05, metal));
+scene.add(rod(new T.Vector3(0,-2.62,0), new T.Vector3(0,-3.6,0), .06, metal));
+const base = new T.Mesh(new T.CylinderGeometry(.9, 1.1, .12, 32), metal); base.position.y = -3.56; scene.add(base);
+
+// gimbal hierarchy: yaw(Y) ⊃ pitch(X) ⊃ roll(Z)
+const R_OUT = 2.6, R_MID = 2.15, R_IN = 1.7;
+const yawG = new T.Group(), pitchG = new T.Group(), rollG = new T.Group();
+scene.add(yawG); yawG.add(pitchG); pitchG.add(rollG);
+
+const mY = ringMat(COL.y), mX = ringMat(COL.x), mZ = ringMat(COL.z);
+const ringY = new T.Mesh(new T.TorusGeometry(R_OUT, .065, 16, 180), mY); yawG.add(ringY);
+const ringX = new T.Mesh(new T.TorusGeometry(R_MID, .065, 16, 180), mX); ringX.rotation.x = Math.PI/2; pitchG.add(ringX);
+const ringZ = new T.Mesh(new T.TorusGeometry(R_IN, .065, 16, 180), mZ); ringZ.rotation.y = Math.PI/2; rollG.add(ringZ);
+[1,-1].forEach(s=>{
+  pitchG.add(rod(new T.Vector3(s*R_MID,0,0), new T.Vector3(s*R_OUT,0,0), .045, mX));
+  rollG.add(rod(new T.Vector3(0,0,s*R_IN), new T.Vector3(0,0,s*R_MID), .045, mZ));
+});
+const axY = axisLine(new T.Vector3(0,1,0), COL.y, 3.7); yawG.add(axY);
+const axX = axisLine(new T.Vector3(1,0,0), COL.x, 3.7); pitchG.add(axX);
+const axZ = axisLine(new T.Vector3(0,0,1), COL.z, 3.7); rollG.add(axZ);
+
+// airplane (nose +Z, fin up +Y, wings along X)
+function plane(ghost){
+  const g = new T.Group();
+  const body = ghost ? new T.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.2, depthWrite:false})
+                     : new T.MeshStandardMaterial({color:0xd8dde6, metalness:.2, roughness:.55});
+  const trim = ghost ? body : new T.MeshStandardMaterial({color:COL.acc, metalness:.2, roughness:.5});
+  const fus = new T.Mesh(new T.BoxGeometry(.28,.28,1.7), body); g.add(fus);
+  const nose = new T.Mesh(new T.ConeGeometry(.16,.42,16), trim); nose.rotation.x = Math.PI/2; nose.position.z = 1.06; g.add(nose);
+  const wing = new T.Mesh(new T.BoxGeometry(2.0,.05,.5), body); wing.position.z = .08; g.add(wing);
+  const tail = new T.Mesh(new T.BoxGeometry(.8,.04,.26), body); tail.position.z = -.72; g.add(tail);
+  const fin = new T.Mesh(new T.BoxGeometry(.04,.42,.3), trim); fin.position.set(0,.22,-.72); g.add(fin);
+  if(!ghost){
+    const tip = new T.Mesh(new T.SphereGeometry(.07,12,12), trim); tip.position.set(1.0,0,.08); g.add(tip);
+    g.userData.tip = tip;
+  }
+  return g;
+}
+const craft = plane(false); rollG.add(craft);
+const ghost = plane(true); scene.add(ghost); ghost.visible = false;
+
+// trails of the wing tip
+const N = 600;
+function makeTrail(points){
+  const geo = new T.BufferGeometry();
+  geo.setAttribute('position', new T.BufferAttribute(new Float32Array(N*3), 3));
+  geo.setDrawRange(0,0);
+  const obj = points
+    ? new T.Points(geo, new T.PointsMaterial({color:COL.z, size:.11, sizeAttenuation:true}))
+    : new T.Line(geo, new T.LineBasicMaterial({color:COL.y}));
+  obj.frustumCulled = false; obj.userData.n = 0; scene.add(obj); return obj;
+}
+const trailA = makeTrail(false), trailB = makeTrail(true);
+function trailReset(){ [trailA,trailB].forEach(t=>{ t.userData.n=0; t.geometry.setDrawRange(0,0); }); }
+const _p = new T.Vector3();
+function trailPush(t){
+  const n = t.userData.n; if(n >= N) return;
+  craft.userData.tip.getWorldPosition(_p);
+  const a = t.geometry.attributes.position;
+  if(n>0 && _p.distanceToSquared(new T.Vector3(a.getX(n-1),a.getY(n-1),a.getZ(n-1))) < 0.0016) return;
+  a.setXYZ(n, _p.x, _p.y, _p.z); a.needsUpdate = true;
+  t.userData.n = n+1; t.geometry.setDrawRange(0, n+1);
+}
+
+// quaternion rotation axis (chapter 6)
+const qAxis = new T.Group();
+(function(){
+  const mat = new T.MeshBasicMaterial({color:COL.acc});
+  qAxis.add(rod(new T.Vector3(0,-3.4,0), new T.Vector3(0,3.4,0), .03, mat));
+  const c = new T.Mesh(new T.ConeGeometry(.12,.36,16), mat); c.position.y = 3.55; qAxis.add(c);
+})();
+qAxis.visible = false; scene.add(qAxis);
+
+/* ---------- helpers ---------- */
+const ease = u => u<.5 ? 2*u*u : 1 - Math.pow(-2*u+2, 2)/2;
+function kfAt(kf, t){
+  if(t <= kf[0][0]) return kf[0].slice(1);
+  for(let i=1;i<kf.length;i++){
+    if(t <= kf[i][0]){
+      const a = kf[i-1], b = kf[i], u = ease((t-a[0])/((b[0]-a[0])||1));
+      return a.slice(1).map((v,j)=> v + (b[j+1]-v)*u);
+    }
+  }
+  return kf[kf.length-1].slice(1);
+}
+const eul = new T.Euler();
+function decomp(q){ eul.setFromQuaternion(q, 'YXZ'); return {y:eul.y/D, p:-eul.x/D, r:eul.z/D}; }
+function qFrom(y,p,r){ return new T.Quaternion().setFromEuler(new T.Euler(-p*D, y*D, r*D, 'YXZ')); }
+const Z = new T.Vector3(0,0,1);
+const qUp = qFrom(0,90,0);
+const qTilt = new T.Quaternion().setFromAxisAngle(Z, -35*D).multiply(qUp);
+const qArb = qFrom(40,25,30), qId = new T.Quaternion();
+
+/* ---------- chapters ---------- */
+const CH = [
+ { name:'3つのリング＝3つの回転軸', dur:9,
+   title:'回転は3本のリングで表せる',
+   body:'<p>オイラー角は、向きを <span class="em-y">Y（ヨー）</span>・<span class="em-x">X（ピッチ）</span>・<span class="em-z">Z（ロール）</span> の3つの角度に分けて表す方法です。ジンバルはそれを機械にしたもので、リング1本が1つの軸を受け持ちます。</p>',
+   kf:[[0,0,0,0],[.6,0,0,0],[2,50,0,0],[3,0,0,0],[4.2,0,40,0],[5.2,0,0,0],[6.4,0,0,60],[7.6,0,0,0],[9,0,0,0]] },
+ { name:'リングは入れ子', dur:8.5,
+   title:'リングは入れ子（親子関係）',
+   body:'<p>外のリングを回すと、内側のリングもまるごと一緒に回ります。Unity の Transform は <b>Z → X → Y</b> の順に回転を適用するので、<span class="em-y">Y</span> が一番外、<span class="em-x">X</span> が真ん中、<span class="em-z">Z</span> が一番内側。この親子関係がロックの原因になります。</p>',
+   kf:[[0,0,0,0],[.5,0,0,0],[2,0,35,0],[3.2,0,35,40],[5.2,70,35,40],[6.6,70,35,40],[8.5,0,0,0]] },
+ { name:'真ん中を90°倒す', dur:6.5,
+   title:'真ん中のリングを90°倒すと…',
+   body:'<p><span class="em-x">ピッチ（X）</span>を90°にすると、一番内側の <span class="em-z">Z 軸</span>が一緒に倒れて、一番外側の <span class="em-y">Y 軸</span>とぴったり重なります。右下の「なす角」が 0° になるのを見てください。</p>',
+   kf:[[0,0,0,0],[.8,0,0,0],[4.2,0,90,0],[6.5,0,90,0]] },
+ { name:'ヨーとロールが同じ動きに', dur:11,
+   title:'2本のリングが同じ動きしかしない',
+   body:'<p>この状態だと <span class="em-y">ヨー</span>を回しても <span class="em-z">ロール</span>を回しても、機体は同じ縦軸まわりに回るだけ。翼の先の軌跡（<span class="em-y">線＝ヨー</span>／<span class="em-z">点＝ロール</span>）が完全に重なります。</p><p style="margin-top:8px">3つあった回転の自由度が2つに減る。これが<span class="em-a">ジンバルロック</span>です。</p>',
+   kf:[[0,0,90,0],[.6,0,90,0],[2.4,50,90,0],[4.2,-50,90,0],[5.2,0,90,0],[5.7,0,90,0],[7.5,0,90,50],[9.3,0,90,-50],[10.3,0,90,0],[11,0,90,0]],
+   trail:t=> t>.6&&t<5.2 ? trailA : (t>5.7&&t<10.3 ? trailB : null) },
+ { name:'失われた1方向', dur:9.5, ghost:true,
+   title:'失われた方向に回したいと…',
+   body:'<p>半透明のゴーストは、機首を<b>横へ少し傾けたい</b>だけ。でもその回転を受け持つリングはもう残っていません。そこで <span class="em-y">外</span>と<span class="em-z">内</span>のリングが一気に約90°回って、つじつまを合わせます。</p><p style="margin-top:8px">アニメーション補間やカメラが急にねじれる・反転するのは、この「急回転」が原因です。</p>',
+   fn(t){
+     const th = kfAt([[0,0],[1.2,0],[4,35],[6,35],[8.6,0],[9.5,0]], t)[0];
+     const q = new T.Quaternion().setFromAxisAngle(Z, -th*D).multiply(qUp);
+     return Object.assign(decomp(q), {k:4.5, ghost:q});
+   } },
+ { name:'解決策：クォータニオン', dur:11, quat:true,
+   title:'解決策：クォータニオン',
+   body:'<p>クォータニオンは「<span class="em-a">どの軸のまわりに何度回すか</span>」を1つの値で持ちます。リングの入れ子がないので、どの向きからでもオレンジの軸まわりに最短でなめらかに回れます。</p><pre><span class="c">// ✕ オイラー角を毎フレーム足す</span>\nangles.x += speed * Time.deltaTime;\ntransform.eulerAngles = angles;\n\n<span class="c">// ○ クォータニオンで回す・補間する</span>\ntransform.rotation = Quaternion.Slerp(\n    from, to, t);\ntransform.rotation *= Quaternion.AngleAxis(\n    deg, axis);</pre>',
+   fn(t){
+     const seq = [qUp, qTilt, qArb, qId], seg = 3.2, hold = .7;
+     let i = Math.min(Math.floor(t/seg), seq.length-2);
+     const local = t - i*seg;
+     const u = ease(Math.min(1, Math.max(0, (local-hold)/(seg-hold))));
+     const a = seq[i], b = seq[i+1];
+     const q = a.clone().slerp(b, u);
+     const dq = b.clone().multiply(a.clone().invert());
+     if(dq.w < 0){ dq.x=-dq.x; dq.y=-dq.y; dq.z=-dq.z; dq.w=-dq.w; }
+     const axis = new T.Vector3(dq.x,dq.y,dq.z); if(axis.lengthSq()<1e-8) axis.set(0,1,0); axis.normalize();
+     return Object.assign(decomp(q), {k:Infinity, q, axis, fade:Math.min(1,t/.8)});
+   } }
+];
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const list = $('chapters');
+CH.forEach((c,i)=>{
+  const li = document.createElement('li'); const b = document.createElement('button');
+  b.innerHTML = '<span class="n">'+(i+1)+'</span><span>'+c.name+'</span>';
+  b.addEventListener('click', ()=> go(i));
+  li.appendChild(b); list.appendChild(li);
+});
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let mode = 'story', ci = 0, t = 0, playing = !reduce;
+const disp = {y:0,p:0,r:0}, prev = {y:0,p:0,r:0};
+const free = {y:0,p:0,r:0};
+
+function setCaption(){
+  const c = CH[ci];
+  $('capStep').textContent = 'STEP ' + (ci+1) + ' / ' + CH.length;
+  $('capTitle').textContent = c.title;
+  $('capBody').innerHTML = c.body;
+  [...list.querySelectorAll('button')].forEach((b,i)=> b.setAttribute('aria-current', i===ci ? 'true':'false'));
+}
+function go(i){ ci = (i + CH.length) % CH.length; t = 0; trailReset(); setCaption(); }
+function setPlay(p){
+  playing = p;
+  $('bPlay').setAttribute('aria-label', p ? '一時停止' : '再生');
+  $('icPlay').innerHTML = p ? '<path d="M3 2h3v10H3zM8 2h3v10H8z" fill="currentColor"/>' : '<path d="M3 1.5 12 7l-9 5.5z" fill="currentColor"/>';
+}
+$('bPlay').onclick = ()=> setPlay(!playing);
+$('bPrev').onclick = ()=> go(ci-1);
+$('bNext').onclick = ()=> go(ci+1);
+
+function setMode(m){
+  mode = m;
+  $('tabStory').setAttribute('aria-selected', m==='story');
+  $('tabFree').setAttribute('aria-selected', m==='free');
+  $('story').hidden = m!=='story'; $('chapCard').hidden = m!=='story'; $('free').hidden = m!=='free';
+  if(m==='free'){
+    free.y = Math.round(disp.y); free.p = Math.round(disp.p); free.r = Math.round(disp.r);
+    syncSliders(); trailReset();
+  } else { go(ci); }
+}
+$('tabStory').onclick = ()=> setMode('story');
+$('tabFree').onclick = ()=> setMode('free');
+function syncSliders(){
+  [['y','sy','oy'],['p','sp','op'],['r','sr','or']].forEach(([k,s,o])=>{ $(s).value = free[k]; $(o).textContent = free[k]+'°'; });
+}
+[['y','sy','oy'],['p','sp','op'],['r','sr','or']].forEach(([k,s,o])=>{
+  $(s).addEventListener('input', e=>{ free[k] = +e.target.value; $(o).textContent = free[k]+'°'; });
+});
+$('fLock').onclick = ()=>{ free.p = 90; syncSliders(); };
+$('fReset').onclick = ()=>{ free.y = free.p = free.r = 0; syncSliders(); };
+
+// orbit by drag
+let drag = null;
+vp.addEventListener('pointerdown', e=>{ drag = {x:e.clientX, y:e.clientY}; vp.setPointerCapture(e.pointerId); });
+vp.addEventListener('pointermove', e=>{
+  if(!drag) return;
+  az -= (e.clientX-drag.x)*.008; el = Math.max(-.15, Math.min(1.25, el + (e.clientY-drag.y)*.006));
+  drag = {x:e.clientX, y:e.clientY}; placeCam();
+});
+['pointerup','pointercancel'].forEach(ev=> vp.addEventListener(ev, ()=> drag = null));
+
+function resize(){
+  const w = vp.clientWidth, h = vp.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(vp);
+
+/* ---------- loop ---------- */
+const wrap = d => ((d + 540) % 360) - 180;
+const vY = new T.Vector3(), vZ = new T.Vector3(), wq = new T.Quaternion();
+let last = performance.now();
+function setRingOpacity(o){
+  [mY,mX,mZ].forEach(m=> m.opacity = o);
+  [axY,axX,axZ].forEach(a=> a.userData.mat.opacity = .6*o);
+  metal.transparent = true; metal.opacity = Math.max(o, .25);
+}
+function dialPos(el, v, range){ el.style.left = (50 + 50*Math.max(-1,Math.min(1,v/range))) + '%'; }
+
+function frame(now){
+  const dt = Math.min(.05, (now-last)/1000); last = now;
+  let s;
+  if(mode === 'story'){
+    const c = CH[ci];
+    if(playing){ t += dt; if(t >= c.dur){ go(ci+1); } }
+    const cc = CH[ci];
+    s = cc.fn ? cc.fn(t) : (()=>{ const v = kfAt(cc.kf, t); return {y:v[0], p:v[1], r:v[2], k:14}; })();
+    const tr = cc.trail ? cc.trail(t) : null; if(tr) trailPush(tr);
+    $('prog').style.width = (100*t/cc.dur) + '%';
+  } else {
+    s = {y:free.y, p:free.p, r:free.r, k:14};
+  }
+  Object.assign(prev, disp);
+  const k = s.k === Infinity ? 1 : 1 - Math.exp(-dt*s.k);
+  disp.y += wrap(s.y - disp.y)*k; disp.p += (s.p - disp.p)*k; disp.r += wrap(s.r - disp.r)*k;
+  disp.y = wrap(disp.y); disp.r = wrap(disp.r);
+
+  yawG.rotation.y = disp.y*D; pitchG.rotation.x = -disp.p*D; rollG.rotation.z = disp.r*D;
+
+  // glow the ring that is turning
+  const g = (a,b)=> Math.min(.9, Math.abs(wrap(a-b))/Math.max(dt,1e-3)/140);
+  mY.emissiveIntensity = g(disp.y,prev.y); mX.emissiveIntensity = g(disp.p,prev.p); mZ.emissiveIntensity = g(disp.r,prev.r);
+
+  // ghost / quaternion view
+  ghost.visible = !!s.ghost; if(s.ghost) ghost.quaternion.copy(s.ghost);
+  qAxis.visible = !!s.axis; if(s.axis) qAxis.quaternion.setFromUnitVectors(new T.Vector3(0,1,0), s.axis);
+  setRingOpacity(s.fade != null ? 1 - .92*s.fade : 1);
+  const tv = mode==='story' && CH[ci].trail; trailA.visible = trailB.visible = !!tv;
+
+  // readouts
+  $('vy').textContent = disp.y.toFixed(1)+'°'; $("vpi").textContent = disp.p.toFixed(1)+'°'; $('vr').textContent = disp.r.toFixed(1)+'°';
+  dialPos($('dy'), disp.y, 180); dialPos($('dp'), disp.p, 90); dialPos($('dr'), disp.r, 180);
+  vY.set(0,1,0); rollG.getWorldQuaternion(wq); vZ.set(0,0,1).applyQuaternion(wq);
+  const ang = Math.acos(Math.min(1, Math.abs(vY.dot(vZ))))/D;
+  $('vang').textContent = ang.toFixed(1)+'°';
+  const m = $('mang'); m.style.width = (ang/90*100)+'%';
+  m.style.background = ang < 2 ? 'var(--accent)' : (ang < 20 ? '#d8c24a' : 'var(--ax-y)');
+  $('lock').hidden = !(ang < 2 && !s.q);
+  const qe = $('quat');
+  if(s.q){ qe.hidden = false; qe.textContent = 'q = (x ' + s.q.x.toFixed(2) + ', y ' + s.q.y.toFixed(2) + ', z ' + s.q.z.toFixed(2) + ', w ' + s.q.w.toFixed(2) + ')'; }
+  else qe.hidden = true;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+placeCam(); resize();
+if(reduce){ ci = 3; t = 2.4; }
+setCaption(); setPlay(playing);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
