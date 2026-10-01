@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>動かしてわかるゲームの仕組み</title>
+<meta name="description" content="ゲーム制作の「なんとなく」を、触って動かせる図解で説明するインタラクティブ解説集。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow column — title block, then a list of explainer entries (thumbnail + text). Same dark "viewport" world as the explainers. */
+:root{
+  --bg:#1a1e25; --panel:#222731; --raise:#2a303b; --line:#343b48;
+  --fg:#e7eaf0; --muted:#9aa3b3; --accent:#f2a54a;
+  --ax-x:#e5574f; --ax-y:#6fc24c; --ax-z:#4b8fe8;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{margin:0;font-family:var(--f-display);font-size:15px;line-height:1.75;padding:0 16px}
+.wrap{max-width:760px;margin:0 auto;padding-block:56px 64px;display:flex;flex-direction:column;gap:40px}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{font-weight:900;font-size:clamp(28px,5vw,42px);line-height:1.25;margin:6px 0 14px;text-wrap:balance}
+.lead{margin:0;color:#cfd4dd;max-width:36em}
+.section-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:8px;font-size:13px;color:var(--muted)}
+.section-head b{font-family:var(--f-mono);font-weight:400;font-variant-numeric:tabular-nums}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.entry{display:grid;grid-template-columns:180px minmax(0,1fr);gap:20px;align-items:center;text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.entry:hover{border-color:var(--muted)}
+.entry:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:560px){.entry{grid-template-columns:minmax(0,1fr)}}
+.thumb{aspect-ratio:16/10;max-width:100%;background:var(--bg);border-radius:6px;display:grid;place-items:center;overflow:hidden}
+.thumb svg{width:78%;height:auto}
+.tags{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted)}
+.tags span{border:1px solid var(--line);border-radius:4px;padding:0 7px}
+.entry h2{font-size:19px;font-weight:700;line-height:1.4;margin:6px 0 4px;text-wrap:balance}
+.entry p{margin:0;font-size:14px;color:#cfd4dd}
+.meta{margin-top:8px;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Interactive explainers</div>
+    <h1>動かしてわかるゲームの仕組み</h1>
+    <p class="lead">ゲーム制作には、知っているつもりで説明できない仕組みがたくさんあります。このページでは、それを文章だけでなく、実際に動かして確かめられる図解で解説します。</p>
+  </header>
+
+  <main>
+    <div class="section-head"><span>解説一覧</span><b>1 本</b></div>
+    <ul class="list" style="margin-top:12px">
+      <li>
+        <a class="entry" href="gimbal-lock/">
+          <div class="thumb" aria-hidden="true">
+            <svg viewBox="0 0 200 125">
+              <ellipse cx="100" cy="62" rx="34" ry="54" fill="none" stroke="#6fc24c" stroke-width="4"/>
+              <ellipse cx="100" cy="62" rx="46" ry="14" fill="none" stroke="#e5574f" stroke-width="4"/>
+              <ellipse cx="100" cy="62" rx="12" ry="36" fill="none" stroke="#4b8fe8" stroke-width="4"/>
+              <line x1="100" y1="2" x2="100" y2="122" stroke="#f2a54a" stroke-width="2" stroke-dasharray="4 4"/>
+            </svg>
+          </div>
+          <div>
+            <div class="tags"><span>3DCG</span><span>回転</span><span>Unity</span></div>
+            <h2>ジンバルロックはなぜ起きる？</h2>
+            <p>入れ子になった3本のリングを動かして、回転軸が重なり自由度が1つ消える瞬間を見ます。解決策のクォータニオンまで。</p>
+            <div class="meta">2026-10-01 · 6ステップ＋自分で回すモード</div>
+          </div>
+        </a>
+      </li>
+    </ul>
+  </main>
+
+  <footer>解説は順次追加します。</footer>
+</div>
+</body>
+</html>
